@@ -88,7 +88,9 @@ So `Religions` is one page, and `The Church of the Morninglord` is an `<h2>` und
 </blockquote>
 ```
 
-### Obsidian callouts → collapsible `<details>`
+### Obsidian callouts → styled `<div>` boxes
+
+**Do not use `<details>` / `<summary>`.** Foundry’s ProseMirror journal editor rewrites those tags: `<summary>` is stripped, and the client shows a generic “Details” disclosure that breaks the Reloaded look.
 
 Source:
 
@@ -100,23 +102,18 @@ Source:
 Foundry:
 
 ```html
-<details class="reloaded-callout callout-warning" open
+<div class="reloaded-callout callout-warning"
   style="border:3px solid #ff8725;border-radius:12px;padding:12px 18px;background:rgba(100,45,0,0.35);margin:0.85em 0;">
-  <summary style="cursor:pointer;list-style:none;color:#ff8725;font-weight:700;font-size:1.05em;margin:0;">
+  <p style="color:#ff8725;font-weight:700;font-size:1.05em;margin:0 0 0.65em 0;">
     <span style="margin-right:0.4em;">⚠</span>A Second-Level Adventure
-  </summary>
-  <div class="callout-body" style="margin-top:0.65em;">
+  </p>
+  <div class="callout-body">
     <p>Remember that…</p>
   </div>
-</details>
+</div>
 ```
 
-**Fold behavior**
-
-| Marker | Behavior |
-|--------|----------|
-| `+` or omitted | `open` attribute (expanded) |
-| `-` | No `open` (collapsed) — common for combat / design notes |
+Callouts are always expanded in Foundry (the Obsidian `+` / `-` fold markers are ignored for collapse state). Combat meta fields (`Combat Level`, `Expected Character Level`, `Expected HP Consumption`) should each be their own `<p>` so labels do not run together.
 
 **Callout type → class / color / icon**
 
@@ -131,7 +128,7 @@ Foundry:
 | `design` | `callout-design` | `#ff6262` | 🔧 |
 | `combat` | `callout-combat` | `#ff6262` | ⚔ |
 
-Callout bodies may contain paragraphs, lists, headings, and **tables**. Convert those before wrapping in `<details>` so they are not escaped.
+Callout bodies may contain paragraphs, lists, headings, and **tables**. Convert nested markdown (especially tables) before wrapping in the callout `<div>`.
 
 ### Read-aloud / letter boxes
 
@@ -148,18 +145,32 @@ Apply the same box chrome to: `description`, `sidebar`, `handout`, `item`, `stat
 
 ### Tables
 
-Markdown pipe tables (including rows inside callouts after stripping `>`) become real HTML tables:
+Markdown pipe tables become **ProseMirror-native HTML tables** — the same shape Foundry generates when you insert a table from the editor toolbar.
+
+**Why not styled `<td>`s or CSS-grid `<div>`s?** Both look fine after API import, then break on the first ProseMirror edit:
+
+| Approach | After import | After edit → save |
+|----------|--------------|-------------------|
+| `<th>` / fancy `<td style=…>` | OK | Header cells merge (`3 Players4 Players…`) |
+| CSS-grid `<div class="reloaded-cell">` | OK | Header cells flatten to `<p><span style=…>` and the grid collapses |
+| Native `<td><p>…</p></td>` | Plain but correct | Columns survive |
 
 ```html
-<table style="width:100%;margin:0.75em 0;border-collapse:collapse;">
-  <thead>
-    <tr>
-      <th style="background:#2C2C2C;color:#fff;padding:8px 10px;border:none;text-align:center;">…</th>
-    </tr>
-  </thead>
+<table class="reloaded-table" border="1" style="width:100%;margin:0.75em 0;border-collapse:collapse;">
   <tbody>
-    <tr style="background:transparent;">
-      <td style="padding:8px 10px;border:none;border-bottom:1px solid rgba(255,255,255,0.1);vertical-align:top;">…</td>
+    <tr>
+      <td><p>&nbsp;</p></td>
+      <td><p><strong>3 Players</strong></p></td>
+      <td><p><strong>4 Players</strong></p></td>
+      <td><p><strong>5 Players</strong></p></td>
+      <td><p><strong>6 Players</strong></p></td>
+    </tr>
+    <tr>
+      <td><p>Shadow</p></td>
+      <td><p>3</p></td>
+      <td><p>4</p></td>
+      <td><p>5</p></td>
+      <td><p>6</p></td>
     </tr>
   </tbody>
 </table>
@@ -167,9 +178,36 @@ Markdown pipe tables (including rows inside callouts after stripping `>`) become
 
 Notes:
 
-- Preserve empty leading cells (e.g. `| |3 Players | 4 Players |`).
-- Allow raw HTML in cells (e.g. `<ul><li>…</li></ul>` in combat balancing rows)—do not escape those fragments.
+- **Every cell must wrap content in `<p>`** (or a real block like `<ul>`). Omitting `<p>` is what triggers merge bugs on edit.
+- No `<thead>` / `<th>` — ProseMirror’s table plugin does not round-trip them cleanly.
+- Do **not** put border/background/padding styles on individual cells; ProseMirror moves or drops them. Use `border="1"` on the `<table>` plus optional world CSS (below).
+- Header labels use `<strong>` inside the cell paragraph.
+- Preserve empty leading cells as `&nbsp;` inside `<p>`.
+- Allow raw list HTML in cells — do not wrap `<ul>` in an extra `<p>`.
 - Never leave markdown pipes as plain text in the journal body.
+
+#### Optional world CSS (visual polish)
+
+Paste into a Custom CSS module (or equivalent) if you want Reloaded-colored headers without fighting ProseMirror:
+
+```css
+.journal-entry-page table.reloaded-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75em 0;
+}
+.journal-entry-page table.reloaded-table td {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 8px 12px;
+  vertical-align: middle;
+}
+.journal-entry-page table.reloaded-table tr:first-child td {
+  background: #2c2c2c;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+}
+```
 
 ### Citations
 
@@ -225,17 +263,31 @@ Patterns to resolve when possible:
 
 ---
 
+## Foundry ProseMirror caveats
+
+Journal HTML is normalized when opened **and again when saved from the editor**. Observed breakage:
+
+| Input | What Foundry does | Mitigation |
+|-------|-------------------|------------|
+| `<details>` + `<summary>` | Strips summary; shows native “Details” label | Use styled `<div>` callouts |
+| `<th>` / styled `<td>` without `<p>` | Merges header cell text on edit | Native `<td><p>…</p></td>` only |
+| CSS-grid cell `<div>`s | Flattens to `<p><span style=…>` on edit | Don’t use grids for tabular data |
+| Inline cell chrome (border/background) | Moved onto spans or dropped | Style via world CSS + `class="reloaded-table"` |
+| Cell / div text | Wrapped in `<p>` | Pre-wrap plain text in `<p>` |
+
+**Important:** Markup can look correct after API import and still break the first time you edit that page. Always edit-test a combat page before treating the markup as final.
+
 ## Conversion pipeline (recommended)
 
 To avoid escaping bugs (the common failure mode for tables/callouts):
 
-1. Convert Obsidian callouts → finished `<details>` HTML (including nested tables).
+1. Convert Obsidian callouts → finished `<div class="reloaded-callout">` HTML (including nested tables).
 2. Convert remaining markdown → HTML.
-3. **Pass through** existing HTML blocks (`<details>`, `<div>`, `<table>`, …) without running them through HTML escaping.
+3. **Pass through** existing HTML blocks (`<div>`, `<table>`, …) without running them through HTML escaping.
 4. Style known Reloaded div classes / credits.
 5. Linkify citations last, without rewriting text inside existing `content-link` anchors.
 
-**Never** wrap already-generated HTML in `escape_html` / `textContent`-style escaping. That produces visible tags like `&lt;details…&gt;` or broken pipe-table text in Foundry.
+**Never** wrap already-generated HTML in `escape_html` / `textContent`-style escaping. That produces visible tags like `&lt;div…&gt;` or broken pipe-table text in Foundry.
 
 ---
 
@@ -263,10 +315,11 @@ Keep original CoS chapter journals (location map pages) in a separate folder so 
 
 When reviewing a converted article in Foundry:
 
-- [ ] Callouts render as collapsible colored boxes (not raw `[!lore]` or escaped HTML)
-- [ ] Combat/design callouts that used `-` start collapsed
+- [ ] Callouts render as colored boxes with icon + title (not a native “Details” disclosure, not raw `[!lore]`)
 - [ ] Description / sidebar boxes show gold borders
-- [ ] Tables render as grids (especially inside combat callouts)
+- [ ] Tables show **separate columns** (native `<table>`, headers not concatenated)
+- [ ] Combat enemy counts align under the correct player-count headers
+- [ ] **Edit-test:** open the page in ProseMirror, save, and confirm columns still match
 - [ ] HTML list cells inside balancing tables render as lists
 - [ ] CoS citations are clickable content links where a target exists
 - [ ] No literal `@UUID[…]` or `<span class="citation">` text visible
